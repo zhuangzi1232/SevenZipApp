@@ -76,8 +76,11 @@ class MainActivity : AppCompatActivity() {
                         outputFile.mkdirs()
                     } else {
                         outputFile.parentFile?.mkdirs()
-                        FileOutputStream(outputFile).use { fos ->
-                            IOUtils.copy(sevenZFile.getContentAsStream(entry), fos)
+                        // 使用官方正确的 getInputStream 方法读取数据
+                        sevenZFile.getInputStream(entry).use { inputStream ->
+                            FileOutputStream(outputFile).use { fos ->
+                                IOUtils.copy(inputStream, fos)
+                            }
                         }
                     }
                     entry = sevenZFile.nextEntry
@@ -94,4 +97,3 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-
