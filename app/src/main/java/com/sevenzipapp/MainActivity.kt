@@ -8,78 +8,68 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import android.provider.OpenableColumns
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
-import org.apache.commons.compress.archivers.sevenz.SevenZFile
-import org.apache.commons.compress.utils.IOUtils
+import org.apache.commons.io.IOUtils
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import org.tukaani.xz.SevenZArchiveEntry
+import org.tukaani.xz.SevenZFile
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
-    private lateinit var btnSelectFile: Button
-
     private var pendingUri: Uri? = null
-    private var pendingTempFile: File? = null
-
-    private val selectFileLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            result.data?.data?.let { uri ->
-                pendingUri = uri
-                copyAndExtract(uri, null)
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         tvStatus = findViewById(R.id.tvStatus)
-        btnSelectFile = findViewById(R.id.btnSelectFile)
+        val btnSelectFile = findViewById<Button>(R.id.btnSelectFile)
 
         btnSelectFile.setOnClickListener {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-            }
-            selectFileLauncher.launch(intent)
+            selectFile()
         }
+    }
+
+    private fun selectFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        selectFileLauncher.launch(intent)
+    }
+
+    private val selectFileLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingUri = uri
+            copyAndExtract(uri, null)
+        }
+    }
+
+    private fun copyUriToTemp(uri: Uri): File {
+        val tempFile = File(cacheDir, "temp_7z_file.7z")
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(tempFile).use { output ->
+                IOUtils.copy(input, output)
+            }
+        }
+        return tempFile
     }
 
     private fun copyAndExtract(uri: Uri, password: String?) {
         var tempFile: File? = null
         try {
             tvStatus.text = "正在处理..."
-
-            val tempFileNew = File(cacheDir, "temp_${System.currentTimeMillis()}.7z")
-            pendingTempFile = tempFileNew
-            
-            contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFileNew).use { output ->
-                    IOUtils.copy(input, output)
-                }
-            }
-            tempFile = tempFileNew
-
-            var fileName = "unknown"
-            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex >= 0) fileName = cursor.getString(nameIndex)
-                }
-            }
+            tempFile = copyUriToTemp(uri)
 
             val outputDir = File(filesDir, "extracted_" + System.currentTimeMillis())
             outputDir.mkdirs()
@@ -115,7 +105,6 @@ class MainActivity : AppCompatActivity() {
 
             tvStatus.text = "解压完成！正在导出到下载目录..."
             
-            // 新增：遍历解压目录，把文件拷贝到下载目录
             outputDir.listFiles()?.forEach { file ->
                 if (file.isFile) {
                     copyToDownloads(this, file)
@@ -137,7 +126,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 新增：导出到公共下载目录的方法
     private fun copyToDownloads(context: Context, sourceFile: File) {
         try {
             val resolver = context.contentResolver
@@ -151,7 +139,7 @@ class MainActivity : AppCompatActivity() {
                 contentValues.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 uri?.let {
-                    resolver.openOutputStream(it).use { outputStream ->
+                    resolver.openOutputStream(it)?.use { outputStream ->
                         FileInputStream(sourceFile).use { inputStream ->
                             inputStream.copyTo(outputStream)
                         }
