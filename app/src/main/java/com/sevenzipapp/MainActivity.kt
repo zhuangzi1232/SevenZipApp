@@ -9,8 +9,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import org.apache.commons.compress.archivers.ArchiveEntry
-import org.apache.commons.compress.archivers.ArchiveInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.utils.IOUtils
@@ -52,8 +50,16 @@ class MainActivity : AppCompatActivity() {
         try {
             tvStatus.text = "正在解压..."
 
+            // 复制输入流到临时文件
+            val tempFile = File(cacheDir, "temp.7z")
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    IOUtils.copy(input, output)
+                }
+            }
+
             // 获取文件名
-            var fileName = "unknown.7z"
+            var fileName = "unknown"
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -61,13 +67,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 创建输出目录（在应用内部存储）
+            // 创建输出目录
             val outputDir = File(filesDir, "extracted_" + System.currentTimeMillis())
             outputDir.mkdirs()
 
-            // 使用 commons-compress 解压 7z
-            contentResolver.openInputStream(uri)?.use { inputStream ->
-                val sevenZFile = SevenZFile(inputStream.readBytes().inputStream().buffered())
+            // 使用兼容的 File 构造函数解压
+            SevenZFile(tempFile).use { sevenZFile ->
                 var entry: SevenZArchiveEntry? = sevenZFile.nextEntry
                 while (entry != null) {
                     val outputFile = File(outputDir, entry.name)
@@ -81,7 +86,6 @@ class MainActivity : AppCompatActivity() {
                     }
                     entry = sevenZFile.nextEntry
                 }
-                sevenZFile.close()
             }
 
             tvStatus.text = "解压完成！文件保存在：${outputDir.absolutePath}"
