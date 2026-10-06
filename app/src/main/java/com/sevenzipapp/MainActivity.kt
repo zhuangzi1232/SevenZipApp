@@ -50,7 +50,6 @@ class MainActivity : AppCompatActivity() {
         try {
             tvStatus.text = "正在解压..."
 
-            // 复制输入流到临时文件
             val tempFile = File(cacheDir, "temp.7z")
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
@@ -58,7 +57,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 获取文件名
             var fileName = "unknown"
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -67,11 +65,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // 创建输出目录
             val outputDir = File(filesDir, "extracted_" + System.currentTimeMillis())
             outputDir.mkdirs()
 
-            // 使用兼容的 File 构造函数解压
             SevenZFile(tempFile).use { sevenZFile ->
                 var entry: SevenZArchiveEntry? = sevenZFile.nextEntry
                 while (entry != null) {
@@ -98,3 +94,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
