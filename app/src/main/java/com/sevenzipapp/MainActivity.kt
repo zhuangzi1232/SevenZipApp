@@ -1,45 +1,32 @@
-import org.apache.commons.compress.utils.IOUtils
+package com.sevenzipapp
+
 import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.appcompat.app.AppCompatActivity
-import android.os.Bundle
-import android.net.Uri
-import android.content.Intent
-import android.view.View
+import android.provider.OpenableColumns
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import android.app.AlertDialog
-import android.widget.EditText
-import android.text.InputType
-import androidx.activity.result.ActivityResultContracts
-import androidx.activity.result.contractForActivityResult
+import androidx.appcompat.app.AlertDialog
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.io.IOUtils
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import android.util.Log
 
 class MainActivity : AppCompatActivity() {
-
     private lateinit var tvStatus: TextView
     private lateinit var btnSelectFile: Button
-
     private var pendingUri: Uri? = null
     private var pendingTempFile: File? = null
-
-    private val selectFileLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            result.data?.data?.let { uri ->
-                pendingUri = uri
-                copyAndExtract(uri, null)
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,28 +44,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val selectFileLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            pendingUri = uri
+            copyAndExtract(uri, null)
+        }
+    }
+
+    private fun copyUriToTemp(uri: Uri): File {
+        val tempFile = File(cacheDir, "temp_${System.currentTimeMillis()}.7z")
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(tempFile).use { output ->
+                IOUtils.copy(input, output)
+            }
+        }
+        return tempFile
+    }
+
     private fun copyAndExtract(uri: Uri, password: String?) {
         var tempFile: File? = null
         try {
             tvStatus.text = "正在处理..."
-
-            val tempFileNew = File(cacheDir, "temp_${System.currentTimeMillis()}.7z")
-            pendingTempFile = tempFileNew
-            
-            contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFileNew).use { output ->
-                    IOUtils.copy(input, output)
-                }
-            }
-            tempFile = tempFileNew
-
-            var fileName = "unknown"
-            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex >= 0) fileName = cursor.getString(nameIndex)
-                }
-            }
+            tempFile = copyUriToTemp(uri)
 
             val outputDir = File(filesDir, "extracted_" + System.currentTimeMillis())
             outputDir.mkdirs()
@@ -93,6 +80,7 @@ class MainActivity : AppCompatActivity() {
                 var entry: SevenZArchiveEntry? = szf.nextEntry
                 while (entry != null) {
                     try {
+                        Log.d("SevenZip", "entry=${entry.name} methods=${entry.contentMethods}")
                         val outFile = File(outputDir, entry.name)
                         if (entry.isDirectory) {
                             outFile.mkdirs()
@@ -105,7 +93,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        Log.e("SevenZip", "单文件解压失败: ${entry.name}", e)
                         tvStatus.append("\n跳过失败: ${entry.name} -> ${e.message}")
                     }
                     entry = szf.nextEntry
@@ -122,6 +110,7 @@ class MainActivity : AppCompatActivity() {
 
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
+            Log.e("SevenZip", "整体解压失败", e)
             if (msg.contains("password", ignoreCase = true) || msg.contains("encrypted", ignoreCase = true)) {
                 tvStatus.text = "该文件已加密，需要密码"
                 showPasswordDialog()
@@ -135,7 +124,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun copyToDownloads(context: android.content.Context, sourceFile: File) {
+    private fun copyToDownloads(context: Context, sourceFile: File) {
         try {
             val resolver = context.contentResolver
             val contentValues = ContentValues().apply {
