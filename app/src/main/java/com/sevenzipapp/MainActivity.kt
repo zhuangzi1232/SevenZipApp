@@ -1,8 +1,10 @@
 package com.sevenzipapp
 
+import android.app.Activity
+import android.app.AlertDialog
+import android.app.DialogInterface
 import android.content.ContentValues
-import android.content.Context
-import android.content.DialogInterface
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,11 +15,8 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
-import org.apache.commons.compress.archivers.sevenz.SevenZFile
-import org.apache.commons.compress.utils.IOUtils
+import org.apache.commons.io.IOUtils
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -37,20 +36,19 @@ class MainActivity : AppCompatActivity() {
 
         selectBtn.setOnClickListener {
             Toast.makeText(this, "按钮被点击了", Toast.LENGTH_SHORT).show()
-            val intent = android.content.Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-            }
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+            intent.type = "*/*"
             startActivityForResult(intent, 100)
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 100 && resultCode == RESULT_OK) {
-            data?.data?.let { uri ->
-                pendingUri = uri
-                copyAndExtract(uri, "")
+        if (requestCode == 100 && resultCode == Activity.RESULT_OK) {
+            data?.data?.let {
+                pendingUri = it
+                copyAndExtract(it, "")
             }
         }
     }
