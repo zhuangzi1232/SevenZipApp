@@ -3,21 +3,21 @@ package com.sevenzipapp
 import android.content.ContentValues
 import android.content.Context
 import android.content.DialogInterface
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.utils.IOUtils
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -25,69 +25,54 @@ import java.io.FileOutputStream
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
+    private lateinit var selectBtn: Button
     private var pendingUri: Uri? = null
-    private val PICK_FILE_REQUEST = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 50, 50, 50)
-        }
-
-        val selectBtn = Button(this).apply {
-            text = "选择7Z文件并解压"
-        }
-
-        tvStatus = TextView(this).apply {
-            text = "等待操作..."
-        }
-
-        layout.addView(selectBtn)
-        layout.addView(tvStatus)
-
-        setContentView(layout)
+        tvStatus = findViewById(R.id.tvStatus)
+        selectBtn = findViewById(R.id.selectBtn)
 
         selectBtn.setOnClickListener {
             Toast.makeText(this, "按钮被点击了", Toast.LENGTH_SHORT).show()
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
+            val intent = android.content.Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
             }
-            startActivityForResult(intent, PICK_FILE_REQUEST)
+            startActivityForResult(intent, 100)
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == PICK_FILE_REQUEST && resultCode == RESULT_OK) {
-            val uri = data?.data
-            if (uri != null) {
+        if (requestCode == 100 && resultCode == RESULT_OK) {
+            data?.data?.let { uri ->
                 pendingUri = uri
-                copyAndExtract(uri, null)
+                copyAndExtract(uri, "")
             }
         }
     }
 
-    private fun copyAndExtract(uri: Uri, password: String?) {
-        tvStatus.text = "开始处理..."
+    private fun copyAndExtract(uri: Uri, password: String) {
         Thread {
             var tempFile: File? = null
             try {
                 tempFile = File(cacheDir, "temp.7z")
                 contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(tempFile).use { output ->
-                        input.copyTo(output)
+                        IOUtils.copy(input, output)
                     }
                 }
 
-                val outputDir = File(cacheDir, "unzip_output").apply { mkdirs() }
+                val outputDir = File(filesDir, "sevenzip_temp")
+                if (!outputDir.exists()) outputDir.mkdirs()
 
-                val sevenZFile = if (!password.isNullOrEmpty()) {
-                    SevenZFile(tempFile, password.toCharArray())
-                } else {
+                val sevenZFile = if (password.isEmpty()) {
                     SevenZFile(tempFile)
+                } else {
+                    SevenZFile(tempFile, password.toCharArray())
                 }
 
                 sevenZFile.use { szf ->
@@ -100,7 +85,7 @@ class MainActivity : AppCompatActivity() {
                             outFile.parentFile?.mkdirs()
                             szf.getInputStream(entry).use { ins ->
                                 FileOutputStream(outFile).use { fos ->
-                                    ins.copyTo(fos)
+                                    IOUtils.copy(ins, fos)
                                 }
                             }
                         }
