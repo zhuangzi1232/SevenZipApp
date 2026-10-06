@@ -1,44 +1,36 @@
 package com.sevenzipapp
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
+import android.text.InputType
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.sevenzipapp.databinding.ActivityMainBinding
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import org.apache.commons.io.IOUtils
+import android.content.ContentValues
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityMainBinding
+
     private var pendingUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_main)
 
-        binding.btnSelectFile.setOnClickListener {
-            selectFileLauncher.launch(arrayOf("*/*"))
-        }
-    }
+        pendingUri = intent.data
 
-    private val selectFileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            pendingUri = it
-            copyAndExtract(it, null)
+        if (pendingUri != null) {
+            copyAndExtract(pendingUri!!, null)
         }
     }
 
@@ -46,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         val tempFile = File(cacheDir, "temp_${System.currentTimeMillis()}.7z")
         contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(tempFile).use { output ->
-                IOUtils.copy(input, output)
+                input.copyTo(output)
             }
         }
         return tempFile
@@ -55,7 +47,9 @@ class MainActivity : AppCompatActivity() {
     private fun copyAndExtract(uri: Uri, password: String?) {
         var tempFile: File? = null
         try {
-            binding.tvStatus.text = "正在处理..."
+            val tvStatus = findViewById<android.widget.TextView>(R.id.tvStatus)
+            tvStatus.text = "正在处理..."
+
             tempFile = copyUriToTemp(uri)
 
             val outputDir = File(filesDir, "extracted_${System.currentTimeMillis()}")
@@ -77,7 +71,7 @@ class MainActivity : AppCompatActivity() {
                         outFile.parentFile?.mkdirs()
                         szf.getInputStream(entry).use { ins ->
                             FileOutputStream(outFile).use { fos ->
-                                IOUtils.copy(ins, fos)
+                                ins.copyTo(fos)
                             }
                         }
                     }
@@ -85,8 +79,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            binding.tvStatus.text = "解压完成！正在导出到下载目录..."
-            
+            tvStatus.text = "解压完成！正在导出到下载目录..."
+
             outputDir.listFiles()?.forEach { file ->
                 if (file.isFile) {
                     copyToDownloads(this, file)
@@ -96,11 +90,12 @@ class MainActivity : AppCompatActivity() {
 
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
+            val tvStatus = findViewById<android.widget.TextView>(R.id.tvStatus)
             if (msg.contains("password", ignoreCase = true) || msg.contains("encrypted", ignoreCase = true)) {
-                binding.tvStatus.text = "该文件已加密，需要密码"
+                tvStatus.text = "该文件已加密，需要密码"
                 showPasswordDialog()
             } else {
-                binding.tvStatus.text = "解压失败：${e.javaClass.simpleName}"
+                tvStatus.text = "解压失败：${e.javaClass.simpleName}"
                 Toast.makeText(this, "解压失败：${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
             }
             e.printStackTrace()
@@ -119,7 +114,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                contentValues.put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 uri?.let {
                     resolver.openOutputStream(it)?.use { outputStream ->
@@ -129,7 +124,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             } else {
-                val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
                 val destFile = File(downloadDir, sourceFile.name)
                 FileInputStream(sourceFile).use { input ->
                     FileOutputStream(destFile).use { output ->
@@ -151,7 +146,7 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this)
         input.hint = "请输入压缩包密码"
         input.inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        
+
         builder.setView(input)
 
         builder.setPositiveButton("确定") { _, _ ->
@@ -160,7 +155,8 @@ class MainActivity : AppCompatActivity() {
         }
         builder.setNegativeButton("取消") { dialog: DialogInterface, _: Int ->
             dialog.cancel()
-            binding.tvStatus.text = "已取消解压"
+            val tvStatus = findViewById<android.widget.TextView>(R.id.tvStatus)
+            tvStatus.text = "已取消解压"
         }
         builder.show()
     }
