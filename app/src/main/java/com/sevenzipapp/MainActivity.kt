@@ -1,5 +1,6 @@
 package com.sevenzipapp
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -13,7 +14,6 @@ import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import java.io.File
 import java.io.FileOutputStream
-import android.os.Environment
 
 class MainActivity : AppCompatActivity() {
 
@@ -24,12 +24,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 修复：ID 改为和布局一致的 btnSelectFile
+        // 修复：绑定正确的按钮 ID (btnSelectFile)
         val btnSelectFile = findViewById<Button>(R.id.btnSelectFile)
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
 
+        // 申请所有文件访问权限 (Android 11+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
+            if (!android.os.Environment.isExternalStorageManager()) {
                 try {
                     val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                     intent.data = Uri.parse("package:$packageName")
@@ -40,7 +41,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 修复：使用正确的变量名
+        // 点击选择文件
         btnSelectFile.setOnClickListener {
             pick7zFile()
         }
@@ -50,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_MANAGE_STORAGE) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                if (Environment.isExternalStorageManager()) {
+                if (android.os.Environment.isExternalStorageManager()) {
                     Toast.makeText(this, "授权成功", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "未获得权限，可能无法解压", Toast.LENGTH_SHORT).show()
@@ -60,7 +61,8 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == PICK_FILE_REQUEST && data != null) {
             val uri: Uri? = data.data
             if (uri != null) {
-                extract7zFile(uri)
+                // 选中文件后，弹出密码输入框
+                showPasswordDialog(uri)
             }
         }
     }
@@ -73,23 +75,47 @@ class MainActivity : AppCompatActivity() {
         startActivityForResult(intent, PICK_FILE_REQUEST)
     }
 
-    private fun extract7zFile(uri: Uri) {
+    // 新增：密码输入弹窗
+    private fun showPasswordDialog(uri: Uri) {
+        val input = android.widget.EditText(this)
+        input.hint = "如果无密码请直接点击确定"
+        
+        AlertDialog.Builder(this)
+            .setTitle("输入解压密码")
+            .setView(input)
+            .setPositiveButton("确定") { _, _ ->
+                val password = input.text.toString()
+                extract7zFile(uri, password)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun extract7zFile(uri: Uri, password: String) {
         Thread {
             try {
                 val inputStream = contentResolver.openInputStream(uri)
                 
+                // 修复：7z 解压不支持直接读 InputStream，先存为临时文件
                 val tempFile = File(cacheDir, "temp.7z")
                 tempFile.outputStream().use { fileOut ->
                     inputStream?.copyTo(fileOut)
                 }
                 inputStream?.close()
 
-                val sevenZFile = SevenZFile(tempFile)
-                val outDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "SevenZipOutput")
+                // 修复：传入密码支持加密解压
+                val sevenZFile = if (password.isNotEmpty()) {
+                    SevenZFile(tempFile, password.toCharArray())
+                } else {
+                    SevenZFile(tempFile)
+                }
+                    
+                val outDir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "SevenZipOutput")
                 if (!outDir.exists()) outDir.mkdirs()
 
                 val extractedFiles = mutableListOf<String>()
                 
+                // 修复：变量初始化问题
                 var entry: SevenZArchiveEntry? = sevenZFile.nextEntry
                 while (entry != null) {
                     val outFile = File(outDir, entry.name)
@@ -99,6 +125,7 @@ class MainActivity : AppCompatActivity() {
                         outFile.parentFile?.mkdirs()
                         val outputStream = FileOutputStream(outFile)
                         val buffer = ByteArray(8192)
+                        // 修复：变量 len 初始化问题
                         var len = sevenZFile.read(buffer)
                         while (len != -1) {
                             outputStream.write(buffer, 0, len)
@@ -140,4 +167,3 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
-
